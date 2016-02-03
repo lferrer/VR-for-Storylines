@@ -1,0 +1,32 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2015
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VR-for-Storylines.CSharp.Plugins", "VR-for-Storylines.CSharp.Plugins.csproj", "{19BBC85A-975B-DEF0-722C-73F93BFB1855}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VR-for-Storylines.CSharp", "VR-for-Storylines.CSharp.csproj", "{14360182-AFC4-0A4D-D569-73B686FA39FB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VR-for-Storylines.CSharp.Editor", "VR-for-Storylines.CSharp.Editor.csproj", "{B10EF104-6403-8C87-EF76-73F089F1BEE0}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{19BBC85A-975B-DEF0-722C-73F93BFB1855}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{19BBC85A-975B-DEF0-722C-73F93BFB1855}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{19BBC85A-975B-DEF0-722C-73F93BFB1855}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{19BBC85A-975B-DEF0-722C-73F93BFB1855}.Release|Any CPU.Build.0 = Release|Any CPU
+		{14360182-AFC4-0A4D-D569-73B686FA39FB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{14360182-AFC4-0A4D-D569-73B686FA39FB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{14360182-AFC4-0A4D-D569-73B686FA39FB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{14360182-AFC4-0A4D-D569-73B686FA39FB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B10EF104-6403-8C87-EF76-73F089F1BEE0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B10EF104-6403-8C87-EF76-73F089F1BEE0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B10EF104-6403-8C87-EF76-73F089F1BEE0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B10EF104-6403-8C87-EF76-73F089F1BEE0}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
