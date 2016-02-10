@@ -42,7 +42,7 @@ public class DataImporter : MonoBehaviour
             KeyValuePair<Vector2, Vector2>[] positions = ParsePostions(line);            
             Vector3[] newVertices, newNormals;
             int[] newTriangles;
-            GenerateGeometry(positions, scale, out newVertices, out newNormals, out newTriangles);            
+            GenerateGeometry(positions, scale, newLine, out newVertices, out newNormals, out newTriangles);            
             Mesh mesh = new Mesh();
             mesh.vertices = newVertices;
             mesh.triangles = newTriangles;
@@ -50,7 +50,9 @@ public class DataImporter : MonoBehaviour
             newLine.GetComponent<MeshFilter>().mesh = mesh;
             newLine.transform.parent = LinesParent;
             Color nc = RandomColor.GetColor(ColorScheme.Random, Luminosity.Dark);
-            newLine.GetComponent<Renderer>().material.SetColor("_Color", nc);            
+            newLine.GetComponent<Renderer>().material.SetColor("_Color", nc);
+            foreach(var renderer in newLine.transform.GetComponentsInChildren<Renderer>())
+                renderer.material.SetColor("_Color", nc);
         }
     }
 
@@ -100,7 +102,7 @@ public class DataImporter : MonoBehaviour
     }
 
     //Transforms the positions into vertices in the z = 0 plane
-    void GenerateGeometry(KeyValuePair<Vector2, Vector2>[] positions, Vector2 scale, out Vector3[] vertices, out Vector3[] normals, out int[] triangles)
+    void GenerateGeometry(KeyValuePair<Vector2, Vector2>[] positions, Vector2 scale, GameObject obj, out Vector3[] vertices, out Vector3[] normals, out int[] triangles)
     {
         List<Vector3> verts = new List<Vector3>();
         List<Vector3> norms = new List<Vector3>();
@@ -108,10 +110,10 @@ public class DataImporter : MonoBehaviour
         var cPos = positions[0];
         //Keeps track of the added vertices
         int baseIndex = 0;
-        //Create a straight path for the first pair always
+        //Always reate a straight path for the first pair
         KeyValuePair<Vector2, Vector2> pos = positions[0];
         Vector3 prevStart = new Vector3(pos.Key.x * scale.x, pos.Key.y * scale.y, 0);        
-        Vector3 prevEnd = new Vector3(pos.Value.x * scale.x, pos.Value.y * scale.y, 0);        
+        Vector3 prevEnd = new Vector3(pos.Value.x * scale.x, pos.Value.y * scale.y, 0);     
         float clipSize = 0.0f;
         if (positions.Length > 1)
         {
@@ -124,6 +126,12 @@ public class DataImporter : MonoBehaviour
             }
         }
         AddStraightPath(prevStart, prevEnd, verts, norms, tris, ref baseIndex);
+        //Add the text at the beginning of the line
+        var textGO = Instantiate(obj.transform.GetChild(0));
+        var textMesh = textGO.transform.GetComponentInChildren<TextMesh>();
+        textMesh.text = obj.name;
+        textMesh.transform.position = prevStart;
+        textGO.transform.parent = obj.transform;
         prevEnd.x += clipSize;
         for (int i = 1; i < positions.Length; i++)
         {
@@ -150,6 +158,16 @@ public class DataImporter : MonoBehaviour
                     clipSize = Mathf.Min(nextEnd.x - nextStart.x, end.x - start.x, Mathf.Abs(nextStart.y - start.y)) / 2.0f;                    
                     end.x -= clipSize;
                 }
+            }
+
+            //Add the text at the beginning of the line only if it fits
+            if (end.x - start.x > obj.name.Length * 1.5)
+            {
+                textGO = Instantiate(obj.transform.GetChild(0));
+                textMesh = textGO.transform.GetComponentInChildren<TextMesh>();
+                textMesh.text = obj.name;
+                textMesh.transform.position = start + Vector3.back * 0.1f;                
+                textGO.transform.parent = obj.transform;
             }
 
             //Add rest of the path            
@@ -182,6 +200,7 @@ public class DataImporter : MonoBehaviour
 
         float t = curveSteps;
         Vector3 prev = start;
+        bool first = true;
         while (t <= 1)
         {
             Vector3 next = Mathf.Pow(1.0f - t, 3) * start +
@@ -199,12 +218,20 @@ public class DataImporter : MonoBehaviour
             Vector3 highNext = next + ccw;
 
             AddQuad(lowPrev, highNext, lowNext, highPrev, verts, norms, tris, ref baseIndex);
+            if (first)
+            {
+                verts[baseIndex - 3] = new Vector3(verts[baseIndex - 3].x, verts[baseIndex - 3].y, verts[baseIndex - 3].z + 0.1f);
+                verts[baseIndex - 2] = new Vector3(verts[baseIndex - 2].x, verts[baseIndex - 2].y, verts[baseIndex - 2].z + 0.1f);
+                first = false;
+            }
             t += curveSteps;
             lowPrev = lowNext;
             highPrev = highNext;            
         }
 
         //Make the curves pop out
+        verts[baseIndex - 3] = new Vector3(verts[baseIndex - 3].x, verts[baseIndex - 3].y, verts[baseIndex - 3].z + 0.1f);
+        verts[baseIndex - 2] = new Vector3(verts[baseIndex - 2].x, verts[baseIndex - 2].y, verts[baseIndex - 2].z + 0.1f);
         start.z += 0.1f;
         end.z += 0.1f;
     }
