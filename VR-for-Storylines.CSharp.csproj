@@ -70,6 +70,7 @@
   <ItemGroup>
     <Compile Include="Assets\Scripts\ColorScheme.cs" />
     <Compile Include="Assets\Scripts\DataImporter.cs" />
+    <Compile Include="Assets\Scripts\GeometryGenerator.cs" />
     <Compile Include="Assets\Scripts\Luminosity.cs" />
     <Compile Include="Assets\Scripts\Options.cs" />
     <Compile Include="Assets\Scripts\RandomColor.cs" />

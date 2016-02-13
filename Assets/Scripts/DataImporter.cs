@@ -1,67 +1,17 @@
 ﻿using UnityEngine;
-using RandomColorGenerator;
-using System.Collections;
 using System.Collections.Generic;
-using System.IO;
 
-//This script parses a layout TSV file and generates the geometry.
-public class DataImporter : MonoBehaviour
-{
+public class DataImporter {
 
-    //The TSV with the layout
-    public string LayoutFile;
-
-    //The path half width
-    public float LineWidth = 0.25f;
-
-    //The storyline size - width, height
-    public Vector2 StoryLineSize = new Vector2(100.0f, 10.0f);
-
-    //The line prefab
-    public GameObject LinePrefab;
-
-    //The lines container for shared transformation
-    public Transform LinesParent;    
-
-    //Number of vertices that will make the Bezier curves
-    public int CurveSegments = 6;
-
-    private float curveSteps;
-
-    void Start()
-    {
-        var lines = File.ReadAllLines(LayoutFile);
-        curveSteps = Mathf.Min(1.0f / CurveSegments, 0.25f);
-        Vector2 scale = new Vector2(StoryLineSize.x / (lines[0].Split('\t').Length - 1), StoryLineSize.y / (lines.Length - 1));
-        //The first line is used for headers
-        for (int i = 1; i < lines.Length; i++)
-        {
-            var line = lines[i].Split('\t');
-            var newLine = Instantiate(LinePrefab);
-            newLine.name = line[0];
-            KeyValuePair<Vector2, Vector2>[] positions = ParsePostions(line);            
-            Vector3[] newVertices, newNormals;
-            int[] newTriangles;
-            GenerateGeometry(positions, scale, newLine, out newVertices, out newNormals, out newTriangles);            
-            Mesh mesh = new Mesh();
-            mesh.vertices = newVertices;
-            mesh.triangles = newTriangles;
-            mesh.normals = newNormals;
-            newLine.GetComponent<MeshFilter>().mesh = mesh;
-            newLine.transform.parent = LinesParent;
-            Color nc = RandomColor.GetColor(ColorScheme.Random, Luminosity.Dark);
-            newLine.GetComponent<Renderer>().material.SetColor("_Color", nc);
-            foreach(var renderer in newLine.transform.GetComponentsInChildren<Renderer>())
-                renderer.material.SetColor("_Color", nc);
-        }
-    }
+    public static bool Warp { get; set; }
+    public static Vector2 WarpAmount { get; set; }
 
     //Encoding in vector2 for convenience. First dimension is time and second is height.
-    KeyValuePair<Vector2, Vector2>[] ParsePostions(string[] line)
+    public static KeyValuePair<Vector2, Vector2>[] ParsePostions(string[] line)
     {
-        List<KeyValuePair<Vector2,Vector2>> res = new List<KeyValuePair<Vector2, Vector2>>();
-        float height;        
-        bool wasNumber = float.TryParse(line[1], out height);        
+        List<KeyValuePair<Vector2, Vector2>> res = new List<KeyValuePair<Vector2, Vector2>>();
+        float height;
+        bool wasNumber = float.TryParse(line[1], out height);
         float lastHeight = wasNumber ? height : Mathf.PI;//Picked PI to flag an invalid number
         Vector2 start = wasNumber ? new Vector2(0, height) : Vector2.zero;
         //The first column is used for the name
@@ -101,93 +51,15 @@ public class DataImporter : MonoBehaviour
         return res.ToArray();
     }
 
-    //Transforms the positions into vertices in the z = 0 plane
-    void GenerateGeometry(KeyValuePair<Vector2, Vector2>[] positions, Vector2 scale, GameObject obj, out Vector3[] vertices, out Vector3[] normals, out int[] triangles)
-    {
-        List<Vector3> verts = new List<Vector3>();
-        List<Vector3> norms = new List<Vector3>();
-        List<int> tris = new List<int>();        
-        var cPos = positions[0];
-        //Keeps track of the added vertices
-        int baseIndex = 0;
-        //Always reate a straight path for the first pair
-        KeyValuePair<Vector2, Vector2> pos = positions[0];
-        Vector3 prevStart = new Vector3(pos.Key.x * scale.x, pos.Key.y * scale.y, 0);        
-        Vector3 prevEnd = new Vector3(pos.Value.x * scale.x, pos.Value.y * scale.y, 0);     
-        float clipSize = 0.0f;
-        if (positions.Length > 1)
-        {
-            Vector3 nextStart = new Vector3(positions[1].Key.x * scale.x, positions[1].Key.y * scale.y, 0);
-            Vector3 nextEnd = new Vector3(positions[1].Value.x * scale.x, positions[1].Value.y * scale.y, 0);
-            if (nextStart.x - prevEnd.x <= scale.x)
-            {
-                clipSize = Mathf.Min(nextEnd.x - nextStart.x, prevEnd.x - prevStart.x, Mathf.Abs(nextStart.y - prevStart.y)) / 2.0f;                
-                prevEnd.x -= clipSize;
-            }
-        }
-        AddStraightPath(prevStart, prevEnd, verts, norms, tris, ref baseIndex);
-        //Add the text at the beginning of the line
-        var textGO = Instantiate(obj.transform.GetChild(0));
-        var textMesh = textGO.transform.GetComponentInChildren<TextMesh>();
-        textMesh.text = obj.name;
-        textMesh.transform.position = prevStart;
-        textGO.transform.parent = obj.transform;
-        prevEnd.x += clipSize;
-        for (int i = 1; i < positions.Length; i++)
-        {
-            pos = positions[i];
-            Vector3 start = new Vector3(pos.Key.x * scale.x, pos.Key.y * scale.y, 0);
-            Vector3 end = new Vector3(pos.Value.x * scale.x, pos.Value.y * scale.y, 0);
-            //Do we have to add a curve before?
-            if (start.x - prevEnd.x <= scale.x)
-            {
-                start.x += clipSize;
-                prevEnd.x -= clipSize;
-                AddBezierCurve(prevEnd, start, verts, norms, tris, ref baseIndex, clipSize);
-            }
-            //Store end before we modify it
-            prevEnd = end;
-
-            //Shorten the end if the next segment is contiguous
-            if (i + 1 < positions.Length)
-            {
-                Vector3 nextStart = new Vector3(positions[i + 1].Key.x * scale.x, positions[i + 1].Key.y * scale.y, 0);
-                Vector3 nextEnd = new Vector3(positions[i + 1].Value.x * scale.x, positions[i + 1].Value.y * scale.y, 0);
-                if (nextStart.x - end.x <= scale.x)
-                {                    
-                    clipSize = Mathf.Min(nextEnd.x - nextStart.x, end.x - start.x, Mathf.Abs(nextStart.y - start.y)) / 2.0f;                    
-                    end.x -= clipSize;
-                }
-            }
-
-            //Add the text at the beginning of the line only if it fits
-            if (end.x - start.x > obj.name.Length * 1.5)
-            {
-                textGO = Instantiate(obj.transform.GetChild(0));
-                textMesh = textGO.transform.GetComponentInChildren<TextMesh>();
-                textMesh.text = obj.name;
-                textMesh.transform.position = start + Vector3.back * 0.1f;                
-                textGO.transform.parent = obj.transform;
-            }
-
-            //Add rest of the path            
-            AddStraightPath(start, end, verts, norms, tris, ref baseIndex);            
-            
-        }
-        vertices = verts.ToArray();
-        triangles = tris.ToArray();
-        normals = norms.ToArray();
-    }
-
-    //Ads a bezier curved path between two middle points
-    void AddBezierCurve(Vector3 start, Vector3 end, List<Vector3> verts, List<Vector3> norms, List<int> tris, ref int baseIndex, float curveOffset)
+    //Adds a bezier curved path between two middle points
+    public static void AddBezierCurve(Vector3 start, Vector3 end, float lineWidth, float curveSteps, List<Vector3> verts, List<Vector3> norms, List<int> tris, ref int baseIndex, float curveOffset)
     {
         //Make the curves pop out
         start.z -= 0.1f;
         end.z -= 0.1f;
 
         //Calculate the two starting points
-        Vector3 dir = LineWidth * Vector3.right;
+        Vector3 dir = lineWidth * Vector3.right;
         Vector3 cw = new Vector3(dir.y, -dir.x, dir.z);
         Vector3 ccw = new Vector3(-dir.y, dir.x, dir.z);
         //Lower left
@@ -196,10 +68,9 @@ public class DataImporter : MonoBehaviour
 
         //Calculate the Bezier offset points
         Vector3 startOffset = start + Vector3.right * curveOffset;
-        Vector3 endOffset = end + Vector3.left * curveOffset;        
+        Vector3 endOffset = end + Vector3.left * curveOffset;
 
-        float t = curveSteps;
-        Vector3 prev = start;
+        float t = curveSteps;        
         bool first = true;
         while (t <= 1)
         {
@@ -211,45 +82,62 @@ public class DataImporter : MonoBehaviour
                               6.0f * (1.0f - t) * t * (endOffset - startOffset) +
                               3.0f * t * t * (end - endOffset);
             tangent.Normalize();
-            tangent *= LineWidth;
+            tangent *= lineWidth;
             cw = new Vector3(tangent.y, -tangent.x, tangent.z);
-            ccw = new Vector3(-tangent.y, tangent.x, tangent.z);            
+            ccw = new Vector3(-tangent.y, tangent.x, tangent.z);
             Vector3 lowNext = next + cw;
             Vector3 highNext = next + ccw;
 
             AddQuad(lowPrev, highNext, lowNext, highPrev, verts, norms, tris, ref baseIndex);
             if (first)
             {
-                verts[baseIndex - 3] = new Vector3(verts[baseIndex - 3].x, verts[baseIndex - 3].y, verts[baseIndex - 3].z + 0.1f);
-                verts[baseIndex - 2] = new Vector3(verts[baseIndex - 2].x, verts[baseIndex - 2].y, verts[baseIndex - 2].z + 0.1f);
+                verts[baseIndex - 1] = new Vector3(verts[baseIndex - 1].x, verts[baseIndex - 1].y, verts[baseIndex - 1].z + 0.1f);
+                verts[baseIndex - 4] = new Vector3(verts[baseIndex - 4].x, verts[baseIndex - 4].y, verts[baseIndex - 4].z + 0.1f);
                 first = false;
             }
             t += curveSteps;
             lowPrev = lowNext;
-            highPrev = highNext;            
+            highPrev = highNext;
         }
 
         //Make the curves pop out
-        verts[baseIndex - 3] = new Vector3(verts[baseIndex - 3].x, verts[baseIndex - 3].y, verts[baseIndex - 3].z + 0.1f);
         verts[baseIndex - 2] = new Vector3(verts[baseIndex - 2].x, verts[baseIndex - 2].y, verts[baseIndex - 2].z + 0.1f);
+        verts[baseIndex - 3] = new Vector3(verts[baseIndex - 3].x, verts[baseIndex - 3].y, verts[baseIndex - 3].z + 0.1f);
         start.z += 0.1f;
         end.z += 0.1f;
     }
 
     //Ads a rectangular segment between two middle points
-    void AddStraightPath(Vector3 start, Vector3 end, List<Vector3> verts, List<Vector3> norms, List<int> tris, ref int baseIndex)
+    public static void AddStraightPath(Vector3 start, Vector3 end, float lineWidth, List<Vector3> verts, List<Vector3> norms, List<int> tris, ref int baseIndex)
     {
         //Aux vectors
         Vector3 dir = end - start;
         dir.Normalize();
-        dir *= LineWidth;
+        dir *= lineWidth;
         Vector3 cw = new Vector3(dir.y, -dir.x, dir.z);
         Vector3 ccw = new Vector3(-dir.y, dir.x, dir.z);
         //Create the quad        
         AddQuad(start + cw, end + ccw, end + cw, start + ccw, verts, norms, tris, ref baseIndex);
     }
 
-    void AddQuad(Vector3 zero, Vector3 one, Vector3 two, Vector3 three, List<Vector3> verts, List<Vector3> norms, List<int> tris, ref int baseIndex)
+    public static void AddQuad(Vector3 zero, Vector3 one, Vector3 two, Vector3 three, List<Vector3> verts, List<Vector3> norms, List<int> tris, ref int baseIndex)
+    {
+        if (Warp)
+        {
+            zero = CylinderTransform(zero);
+            one = CylinderTransform(one);
+            two = CylinderTransform(two);
+            three = CylinderTransform(three);
+        }
+        AddVertices(zero, one, two, three, verts, norms, tris, ref baseIndex);
+    }
+
+    private static Vector3 CylinderTransform(Vector3 p)
+    {
+        return new Vector3(p.x, WarpAmount.x * Mathf.Sin(p.y * Mathf.PI * 2.0f / WarpAmount.y), WarpAmount.x * Mathf.Cos(p.y * Mathf.PI * 2.0f / WarpAmount.y));
+    }
+
+    private static void AddVertices(Vector3 zero, Vector3 one, Vector3 two, Vector3 three, List<Vector3> verts, List<Vector3> norms, List<int> tris, ref int baseIndex)
     {
         //Lower left
         verts.Add(zero);
@@ -274,5 +162,4 @@ public class DataImporter : MonoBehaviour
         tris.Add(baseIndex + 3);
         baseIndex += 4;
     }
-
 }
