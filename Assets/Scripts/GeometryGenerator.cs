@@ -32,6 +32,8 @@ public class GeometryGenerator : MonoBehaviour
     //True = Cylinder, False = Plane
     public bool Type = false;
 
+    public float RotationSpeed = 0.5f;
+
     private float curveSteps;
 
     void Start()
@@ -174,6 +176,18 @@ public class GeometryGenerator : MonoBehaviour
         vertices = verts.ToArray();
         triangles = tris.ToArray();
         normals = norms.ToArray();
+    }
+
+    private void FixedUpdate()
+    {
+        if (Type)
+        {
+            if (Input.GetMouseButton(0))
+                transform.Rotate(Vector3.right, RotationSpeed, Space.Self);
+            if (Input.GetMouseButton(1))
+                transform.Rotate(Vector3.left, RotationSpeed, Space.Self);
+        }
+
     }
 
 }
