@@ -17,7 +17,9 @@ public class GeometryGenerator : MonoBehaviour
     //The storyline size - width, height
     public Vector2 StoryLineSize = new Vector2(500.0f, 50.0f);
 
-    public float WarpRadius = 50.0f;    
+    public float WarpRadius = 50.0f;
+
+    public float WarpFactor = 1.5f;
 
     //The line prefab
     public GameObject LinePrefab;
@@ -38,7 +40,9 @@ public class GeometryGenerator : MonoBehaviour
         curveSteps = Mathf.Min(1.0f / CurveSegments, 0.25f);
         Vector2 scale = new Vector2(StoryLineSize.x / (lines[0].Split('\t').Length - 1), StoryLineSize.y / (lines.Length - 1));
         DataImporter.Warp = Type;
-        DataImporter.WarpAmount = new Vector2(StoryLineSize.y, WarpRadius);
+        DataImporter.WarpRadius = WarpRadius;
+        DataImporter.WarpFactor = WarpFactor;
+        DataImporter.WarpLength = WarpFactor*StoryLineSize.y;
 
         //The first line is used for headers
         for (int i = 1; i < lines.Length; i++)
@@ -57,9 +61,10 @@ public class GeometryGenerator : MonoBehaviour
             newLine.GetComponent<MeshFilter>().mesh = mesh;
             newLine.transform.parent = transform;
             Color nc = LineColors[i - 1];
+            nc.a = 255;
             newLine.GetComponent<Renderer>().material.SetColor("_Color", nc);
-            foreach(var renderer in newLine.transform.GetComponentsInChildren<Renderer>())
-                renderer.material.SetColor("_Color", nc);
+            foreach(var textMesh in newLine.transform.GetComponentsInChildren<TextMesh>())
+                textMesh.color = nc;
         }
     }
 
@@ -68,7 +73,8 @@ public class GeometryGenerator : MonoBehaviour
     {
         List<Vector3> verts = new List<Vector3>();
         List<Vector3> norms = new List<Vector3>();
-        List<int> tris = new List<int>();        
+        List<int> tris = new List<int>();
+        Vector3 textOffset = Vector3.down * LineWidth / 2.0f;
         //Keeps track of the added vertices
         int baseIndex = 0;
         //Always reate a straight path for the first pair
@@ -91,7 +97,22 @@ public class GeometryGenerator : MonoBehaviour
         var textGO = Instantiate(obj.transform.GetChild(0));
         var textMesh = textGO.transform.GetComponentInChildren<TextMesh>();
         textMesh.text = obj.name;
-        textMesh.transform.position = prevStart;
+        Vector3 textPos = prevStart + textOffset;
+        float xAngle = 360.0f * textPos.y / (WarpFactor * StoryLineSize.y);
+        if (Type)
+        {            
+            if (Mathf.Abs(xAngle) > 90.0f)
+            {
+                textMesh.transform.Rotate(Vector3.right, 180.0f - xAngle);
+                textMesh.transform.Rotate(Vector3.up, 180.0f);
+                var renderer = textMesh.GetComponent<Renderer>();
+                float textWidth = (renderer.bounds.max.x - renderer.bounds.min.x) / 2.0f;
+                textPos -= 2.0f * textOffset + Vector3.left * textWidth;
+            }
+            else
+                textMesh.transform.Rotate(Vector3.right, 360.0f - xAngle);
+        }
+        textMesh.transform.position = Type ? DataImporter.CylinderTransform(textPos) : textPos;
         textGO.transform.parent = obj.transform;
         prevEnd.x += clipSize;
         for (int i = 1; i < positions.Length; i++)
@@ -127,7 +148,22 @@ public class GeometryGenerator : MonoBehaviour
                 textGO = Instantiate(obj.transform.GetChild(0));
                 textMesh = textGO.transform.GetComponentInChildren<TextMesh>();
                 textMesh.text = obj.name;
-                textMesh.transform.position = start;
+                textPos = start + textOffset;
+                if (Type)
+                {
+                    xAngle = 360.0f * textPos.y / (WarpFactor * StoryLineSize.y);
+                    if (Mathf.Abs(xAngle) > 90.0f)
+                    {
+                        textMesh.transform.Rotate(Vector3.right, 180.0f - xAngle);
+                        textMesh.transform.Rotate(Vector3.up, 180.0f);
+                        var renderer = textMesh.GetComponent<Renderer>();
+                        float textWidth = (renderer.bounds.max.x - renderer.bounds.min.x) / 2.0f;
+                        textPos -= 2.0f * textOffset + Vector3.left * textWidth;
+                    }
+                    else
+                        textMesh.transform.Rotate(Vector3.right, 360.0f - xAngle);
+                }
+                textMesh.transform.position = Type ? DataImporter.CylinderTransform(textPos) : textPos;
                 textGO.transform.parent = obj.transform;
             }
 

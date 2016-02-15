@@ -4,7 +4,14 @@ using System.Collections.Generic;
 public class DataImporter {
 
     public static bool Warp { get; set; }
-    public static Vector2 WarpAmount { get; set; }
+    public static float WarpRadius { get; set; }
+    public static float WarpLength { get; set; }
+    public static float WarpFactor { get; set; }
+
+    //Controls how far behind intersections are pushed
+    private static float PushFactor = -0.1f;
+
+    private static System.Random rnd = new System.Random();
 
     //Encoding in vector2 for convenience. First dimension is time and second is height.
     public static KeyValuePair<Vector2, Vector2>[] ParsePostions(string[] line)
@@ -54,9 +61,10 @@ public class DataImporter {
     //Adds a bezier curved path between two middle points
     public static void AddBezierCurve(Vector3 start, Vector3 end, float lineWidth, float curveSteps, List<Vector3> verts, List<Vector3> norms, List<int> tris, ref int baseIndex, float curveOffset)
     {
-        //Make the curves pop out
-        start.z -= 0.1f;
-        end.z -= 0.1f;
+        float offset = 1.0f + (float)rnd.NextDouble();
+        float backFactor = offset * PushFactor;
+        start.z -= backFactor;
+        end.z -= backFactor;
 
         //Calculate the two starting points
         Vector3 dir = lineWidth * Vector3.right;
@@ -69,7 +77,7 @@ public class DataImporter {
         //Calculate the Bezier offset points
         Vector3 startOffset = start + Vector3.right * curveOffset;
         Vector3 endOffset = end + Vector3.left * curveOffset;
-
+        
         float t = curveSteps;        
         bool first = true;
         while (t <= 1)
@@ -87,24 +95,26 @@ public class DataImporter {
             ccw = new Vector3(-tangent.y, tangent.x, tangent.z);
             Vector3 lowNext = next + cw;
             Vector3 highNext = next + ccw;
+            t += curveSteps;
 
-            AddQuad(lowPrev, highNext, lowNext, highPrev, verts, norms, tris, ref baseIndex);
+            //Make the curves pop out
             if (first)
             {
-                verts[baseIndex - 1] = new Vector3(verts[baseIndex - 1].x, verts[baseIndex - 1].y, verts[baseIndex - 1].z + 0.1f);
-                verts[baseIndex - 4] = new Vector3(verts[baseIndex - 4].x, verts[baseIndex - 4].y, verts[baseIndex - 4].z + 0.1f);
+                lowPrev.z += backFactor;
+                highPrev.z += backFactor;
                 first = false;
             }
-            t += curveSteps;
+            if (t > 1)
+            {
+                highNext.z += backFactor;
+                lowNext.z += backFactor;
+            }
+            AddQuad(lowPrev, highNext, lowNext, highPrev, verts, norms, tris, ref baseIndex);
             lowPrev = lowNext;
             highPrev = highNext;
-        }
-
-        //Make the curves pop out
-        verts[baseIndex - 2] = new Vector3(verts[baseIndex - 2].x, verts[baseIndex - 2].y, verts[baseIndex - 2].z + 0.1f);
-        verts[baseIndex - 3] = new Vector3(verts[baseIndex - 3].x, verts[baseIndex - 3].y, verts[baseIndex - 3].z + 0.1f);
-        start.z += 0.1f;
-        end.z += 0.1f;
+        }        
+        start.z += backFactor;
+        end.z += backFactor;        
     }
 
     //Ads a rectangular segment between two middle points
@@ -132,9 +142,10 @@ public class DataImporter {
         AddVertices(zero, one, two, three, verts, norms, tris, ref baseIndex);
     }
 
-    private static Vector3 CylinderTransform(Vector3 p)
+    public static Vector3 CylinderTransform(Vector3 p)
     {
-        return new Vector3(p.x, WarpAmount.x * Mathf.Sin(p.y * Mathf.PI * 2.0f / WarpAmount.y), WarpAmount.x * Mathf.Cos(p.y * Mathf.PI * 2.0f / WarpAmount.y));
+        float radius = WarpRadius + p.z;
+        return new Vector3(p.x*WarpFactor, radius * Mathf.Sin(p.y * Mathf.PI * 2.0f / WarpLength), radius * Mathf.Cos(p.y * Mathf.PI * 2.0f / WarpLength));
     }
 
     private static void AddVertices(Vector3 zero, Vector3 one, Vector3 two, Vector3 three, List<Vector3> verts, List<Vector3> norms, List<int> tris, ref int baseIndex)
