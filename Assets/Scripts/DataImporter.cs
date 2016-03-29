@@ -3,15 +3,13 @@ using System.Collections.Generic;
 
 public class DataImporter {
 
+    public enum LineType { Tape, Cylinder, Wedge };
+
     public static bool Warp { get; set; }
     public static float WarpRadius { get; set; }
     public static float WarpLength { get; set; }
     public static float WarpFactor { get; set; }
-
-    //Controls how far behind intersections are pushed
-    private static float PushFactor = -0.1f;
-
-    private static System.Random rnd = new System.Random();
+    public static LineType Type = LineType.Tape;
 
     //Encoding in vector2 for convenience. First dimension is time and second is height.
     public static KeyValuePair<Vector2, Vector2>[] ParsePostions(string[] line)
@@ -58,116 +56,213 @@ public class DataImporter {
         return res.ToArray();
     }
 
-    //Adds a bezier curved path between two middle points
-    public static void AddBezierCurve(Vector3 start, Vector3 end, float lineWidth, float curveSteps, List<Vector3> verts, List<Vector3> norms, List<int> tris, ref int baseIndex, float curveOffset)
+    private struct Bundle
     {
-        float offset = 1.0f + (float)rnd.NextDouble();
-        float backFactor = offset * PushFactor;
-        start.z -= backFactor;
-        end.z -= backFactor;
+        public float Start, End;
+        public List<int> Children;
+    }
 
-        //Calculate the two starting points
-        Vector3 dir = lineWidth * Vector3.right;
-        Vector3 cw = new Vector3(dir.y, -dir.x, dir.z);
-        Vector3 ccw = new Vector3(-dir.y, dir.x, dir.z);
-        //Lower left
-        Vector3 lowPrev = start + cw;
-        Vector3 highPrev = start + ccw;
+    public static int[] BundleLines(string[] lines, int numBins)
+    {
+        float[] scores = new float[lines.Length];
+        int[] bins = new int[lines.Length];
+        List<List<Bundle>> bundles = new List<List<Bundle>>();
+        var testLine = lines[0].Split('\t');
+        for (int j = 0; j < testLine.Length; j++)
+            bundles.Add(new List<Bundle>());
 
+        //The first line is used for headers
+        for (int i = 1; i < lines.Length; i++)
+        {
+            var line = lines[i].Split('\t');
+            //The first column is used for the name
+            for (int j = 1; j < line.Length; j++)
+            {
+                float height;
+                if (float.TryParse(line[j], out height))
+                {
+                    bool inBundle = false;
+                    for (int k = 0; k < bundles[j].Count; k++)
+                    {
+                        Bundle bun = bundles[j][k];
+                        if (bun.Start - 1 <= height && bun.End + 1 >= height)
+                        {
+                            bun.Start = Mathf.Min(bun.Start, height);
+                            bun.End = Mathf.Max(bun.End, height);
+                            bun.Children.Add(i);
+                            inBundle = true;
+                        }
+                    }
+                    if (!inBundle)
+                    {
+                        Bundle b = new Bundle();
+                        b.Start = height;
+                        b.End = height;
+                        b.Children = new List<int>();
+                        b.Children.Add(i);
+                        bundles[j].Add(b);
+                    }
+                }
+            }
+        }
+
+        foreach (List<Bundle> lb in bundles)
+        {
+            foreach (Bundle bun in lb)
+            {
+                foreach (int line in bun.Children)
+                {
+                    scores[line] += bun.Children.Count;
+                }
+            }
+        }
+        float[] intervals = MakeIntervals(scores, numBins);
+        for (int i = 0; i < lines.Length; i++)
+        {
+            int bin = Bin(scores[i], intervals);
+            bins[i] = bin;
+        }
+        return bins;
+    }
+
+    static float[] MakeIntervals(float[] data, int numBins)
+    {
+        float max = data[0]; // find min & max
+        float min = data[0];
+        for (int i = 0; i < data.Length; ++i)
+        {
+            if (data[i] < min) min = data[i];
+            if (data[i] > max) max = data[i];
+        }
+        float width = (max - min) / numBins; // compute width
+
+        float[] intervals = new float[numBins * 2]; // intervals
+        intervals[0] = min;
+        intervals[1] = min + width;
+        for (int i = 2; i < intervals.Length - 1; i += 2)
+        {
+            intervals[i] = intervals[i - 1];
+            intervals[i + 1] = intervals[i] + width;
+        }
+        intervals[0] = float.MinValue; // outliers
+        intervals[intervals.Length - 1] = float.MaxValue;
+
+        return intervals;
+    }
+
+    static int Bin(float x, float[] intervals)
+    {
+        for (int i = 0; i < intervals.Length - 1; i += 2)
+        {
+            if (x >= intervals[i] && x < intervals[i + 1])
+                return i / 2;
+        }
+        return -1; // error
+    }
+
+
+    //Adds a bezier curved path between two middle points
+    public static void AddBezierCurve(Vector3 start, Vector3 end, float lineWidth, float curveSteps, List<Vector3> verts, List<int> tris, ref int baseIndex, float curveOffset)
+    {
+        Vector3 prev = start;
         //Calculate the Bezier offset points
         Vector3 startOffset = start + Vector3.right * curveOffset;
         Vector3 endOffset = end + Vector3.left * curveOffset;
-        
+        Vector3 nStart = Vector3.right;
         float t = curveSteps;        
-        bool first = true;
         while (t <= 1)
         {
             Vector3 next = Mathf.Pow(1.0f - t, 3) * start +
                           3.0f * Mathf.Pow(1.0f - t, 2) * t * startOffset +
                           3.0f * (1.0f - t) * t * t * endOffset +
                           Mathf.Pow(t, 3) * end;
-            Vector3 tangent = 3.0f * Mathf.Pow(1.0f - t, 2) * (startOffset - start) +
+            Vector3 nEnd = 3.0f * Mathf.Pow(1.0f - t, 2) * (startOffset - start) +
                               6.0f * (1.0f - t) * t * (endOffset - startOffset) +
-                              3.0f * t * t * (end - endOffset);
-            tangent.Normalize();
-            tangent *= lineWidth;
-            cw = new Vector3(tangent.y, -tangent.x, tangent.z);
-            ccw = new Vector3(-tangent.y, tangent.x, tangent.z);
-            Vector3 lowNext = next + cw;
-            Vector3 highNext = next + ccw;
+                              3.0f * t * t * (end - endOffset);            
             t += curveSteps;
-
-            //Make the curves pop out
-            if (first)
-            {
-                lowPrev.z += backFactor;
-                highPrev.z += backFactor;
-                first = false;
-            }
-            if (t > 1)
-            {
-                highNext.z += backFactor;
-                lowNext.z += backFactor;
-            }
-            AddQuad(lowPrev, highNext, lowNext, highPrev, verts, norms, tris, ref baseIndex);
-            lowPrev = lowNext;
-            highPrev = highNext;
-        }        
-        start.z += backFactor;
-        end.z += backFactor;        
+            nEnd.Normalize();
+            AddStraightPath(lineWidth, prev, next, Vector3.forward, Vector3.forward, nStart, nEnd, verts, tris, ref baseIndex);            
+            prev = next;
+            nStart = nEnd;
+        }
     }
 
-    //Ads a rectangular segment between two middle points
-    public static void AddStraightPath(Vector3 start, Vector3 end, float lineWidth, List<Vector3> verts, List<Vector3> norms, List<int> tris, ref int baseIndex)
+    public static void AddStraightPath(float lineWidth, Vector3 start, Vector3 end, List<Vector3> verts, List<int> tris, ref int baseIndex)
     {
-        //Aux vectors
-        Vector3 dir = end - start;
-        dir.Normalize();
-        dir *= lineWidth;
-        Vector3 cw = new Vector3(dir.y, -dir.x, dir.z);
-        Vector3 ccw = new Vector3(-dir.y, dir.x, dir.z);
-        //Create the quad        
-        AddQuad(start + cw, end + ccw, end + cw, start + ccw, verts, norms, tris, ref baseIndex);
+        Vector3 n = end - start;
+        n.Normalize();
+        Vector3 u = new Vector3(n.y, -n.x, n.z);
+        AddStraightPath(lineWidth, start, end, u, u, n, n, verts, tris, ref baseIndex);
     }
 
-    public static void AddQuad(Vector3 zero, Vector3 one, Vector3 two, Vector3 three, List<Vector3> verts, List<Vector3> norms, List<int> tris, ref int baseIndex)
+    public static void AddStraightPath(float lineWidth, Vector3 start, Vector3 end, Vector3 uStart, Vector3 uEnd, 
+        Vector3 nStart, Vector3 nEnd, List<Vector3> verts, List<int> tris, ref int baseIndex)
     {
         if (Warp)
         {
-            zero = CylinderTransform(zero);
-            one = CylinderTransform(one);
-            two = CylinderTransform(two);
-            three = CylinderTransform(three);
+            start = CylinderTransform(start);
+            end = CylinderTransform(end);
         }
-        AddVertices(zero, one, two, three, verts, norms, tris, ref baseIndex);
+        switch (Type)
+        {
+            case LineType.Tape:                
+                Vector3 dir = end - start;
+                dir.Normalize();
+                dir *= lineWidth;
+                Vector3 cw = new Vector3(dir.y, -dir.x, dir.z);
+                Vector3 ccw = new Vector3(-dir.y, dir.x, dir.z);
+                AddQuad(start + cw, end + ccw, end + cw, start + ccw, verts, tris, ref baseIndex);
+                break;
+            case LineType.Wedge:
+            case LineType.Cylinder:
+                //Diamater of the cylinder times the proportional part that the line is of it
+                var radius = 2.0f * Mathf.PI * WarpRadius * 2.0f * lineWidth / WarpLength;
+                var lowEnd = radius * uEnd + Vector3.Cross(Vector3.zero, uEnd) + end;
+                var lowStart = radius * uStart + Vector3.Cross(Vector3.zero, uStart) + start;
+                var cylinderStep = Type == LineType.Cylinder ? Mathf.PI * 2.0f / 16.0f : Mathf.PI * 2.0f / 4.0f;
+                float t = cylinderStep;
+                while (t <= Mathf.PI * 2.0f + cylinderStep)
+                {
+                    var upEnd = radius * Mathf.Cos(t) * uEnd + Vector3.Cross(radius * Mathf.Sin(t) * nEnd, uEnd) + end;
+                    var upStart = radius * Mathf.Cos(t) * uStart + Vector3.Cross(radius * Mathf.Sin(t) * nStart, uStart) + start;
+                    AddQuad(lowStart, upEnd, lowEnd, upStart, verts, tris, ref baseIndex);
+                    lowEnd = upEnd;
+                    lowStart = upStart;
+                    t += cylinderStep;
+                }
+                break;
+        }
+        
+    }
+
+    public static Vector3 CylinderTransform(Vector3 p, float offset)
+    {
+        float radius = WarpRadius + p.z;
+        offset *= Mathf.Deg2Rad;
+        return new Vector3(p.x * WarpFactor, radius * Mathf.Sin(offset + p.y * Mathf.PI * 2.0f / WarpLength), radius * Mathf.Cos(offset + p.y * Mathf.PI * 2.0f / WarpLength));
     }
 
     public static Vector3 CylinderTransform(Vector3 p)
     {
-        float radius = WarpRadius + p.z;
-        return new Vector3(p.x*WarpFactor, radius * Mathf.Sin(p.y * Mathf.PI * 2.0f / WarpLength), radius * Mathf.Cos(p.y * Mathf.PI * 2.0f / WarpLength));
+        return CylinderTransform(p, 0);
     }
 
-    private static void AddVertices(Vector3 zero, Vector3 one, Vector3 two, Vector3 three, List<Vector3> verts, List<Vector3> norms, List<int> tris, ref int baseIndex)
-    {
+    public static void AddQuad(Vector3 zero, Vector3 one, Vector3 two, Vector3 three, List<Vector3> verts, List<int> tris, ref int baseIndex)
+    {        
         //Lower left
         verts.Add(zero);
-        norms.Add(Vector3.forward);
         //Upper right
         verts.Add(one);
-        norms.Add(Vector3.forward);
         //Lower right
         verts.Add(two);
-        norms.Add(Vector3.forward);
         //Upper left
         verts.Add(three);
-        norms.Add(Vector3.forward);
         //Add the indices
-        //Left triangle
+        //Right triangle
         tris.Add(baseIndex + 0);
         tris.Add(baseIndex + 1);
         tris.Add(baseIndex + 2);
-        //Right triangle
+        //Left triangle
         tris.Add(baseIndex + 1);
         tris.Add(baseIndex + 0);
         tris.Add(baseIndex + 3);
